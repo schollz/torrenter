@@ -8,6 +8,9 @@ curl https://gettorrenter.schollz.com | bash
 
 ## usage
 
+
+### magnet links
+
 add a bunch of magnet links to a file:
 
 ```
@@ -21,10 +24,16 @@ and then run
 torrenter --file magnet.links
 ```
 
+### torrent links
 
 save the torrent links to a file, e.g.
 
 ```
 wget https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2024-07-04/2024-07-04-raspios-bookworm-armhf-lite.img.xz.torrent
+torrenter --file 2024-07-04-raspios-bookworm-armhf-lite.img.xz.torrent
 ```
+
+## license
+
+MIT
 
