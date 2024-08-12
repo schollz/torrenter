@@ -73,6 +73,7 @@ func main() {
 	// Passed wg will be accounted at p.Wait() call
 	p := mpb.New(mpb.WithWaitGroup(&wg))
 	numBars := numMagnetLinks
+	fmt.Printf("Downloading %d torrents\n", numBars)
 	wg.Add(numBars)
 
 	scanner := bufio.NewScanner(file)
@@ -92,27 +93,32 @@ func main() {
 		go func(t *torrent.Torrent) {
 			t.DownloadAll()
 
-			bar := p.AddBar(int64(t.BytesMissing()),
-				mpb.PrependDecorators(
-					// Simple name decorator
-					decor.Name(t.Name()),
-					// Decor.DSyncWidth bit enables column width synchronization
-					decor.Percentage(decor.WCSyncSpace),
-				),
-				mpb.AppendDecorators(
-					decor.EwmaSpeed(decor.SizeB1024(0), "% .1f", 60),
-					// Replace ETA decorator with "done" message, OnComplete event
-					decor.OnComplete(
-						// ETA decorator with ewma age of 30
-						decor.EwmaETA(decor.ET_STYLE_GO, 30, decor.WCSyncWidth), " done",
-					),
-				),
-			)
+			if t.BytesMissing() == 0 {
+				fmt.Printf("[%s] done\n", t.Name())
+			} else {
 
-			for t.BytesMissing() > 0 {
-				status := t.Stats()
-				time.Sleep(10 * time.Millisecond)
-				bar.EwmaSetCurrent(int64(status.BytesRead.Int64()), 10*time.Millisecond)
+				bar := p.AddBar(int64(t.BytesMissing()),
+					mpb.PrependDecorators(
+						// Simple name decorator
+						decor.Name(fmt.Sprintf("[%s]", t.Name())),
+						// Decor.DSyncWidth bit enables column width synchronization
+						decor.Percentage(decor.WCSyncSpace),
+					),
+					mpb.AppendDecorators(
+						decor.EwmaSpeed(decor.SizeB1024(0), "% .1f", 60),
+						// Replace ETA decorator with "done" message, OnComplete event
+						decor.OnComplete(
+							// ETA decorator with ewma age of 30
+							decor.EwmaETA(decor.ET_STYLE_GO, 30, decor.WCSyncWidth), " done",
+						),
+					),
+				)
+				for t.BytesMissing() > 0 {
+					status := t.Stats()
+					time.Sleep(100 * time.Millisecond)
+					bar.EwmaSetCurrent(int64(status.BytesRead.Int64()), 10*time.Millisecond)
+				}
+
 			}
 			wg.Done()
 		}(t)
