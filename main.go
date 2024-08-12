@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,10 +15,22 @@ import (
 	"github.com/vbauerster/mpb/v8/decor"
 )
 
+var Version string
+
 func main() {
-	// Check if 'magnet.links' file exists
-	if _, err := os.Stat("magnet.links"); os.IsNotExist(err) {
-		fmt.Println("magnet.links file not found")
+	// Define a command-line flag for the magnet links file
+	magnetFile := flag.String("file", "magnet.links", "Path to the magnet links file")
+	version := flag.Bool("version", false, "Print the version of the program")
+	flag.Parse()
+
+	if *version {
+		fmt.Println("torrenter " + Version)
+		os.Exit(0)
+	}
+
+	// Check if the specified magnet file exists
+	if _, err := os.Stat(*magnetFile); os.IsNotExist(err) {
+		fmt.Printf("Magnet file %s not found\n", *magnetFile)
 		os.Exit(1)
 	}
 
@@ -37,27 +50,27 @@ func main() {
 	}
 	defer client.Close()
 
-	// Open the magnet.links file and start downloading
-	file, err := os.Open("magnet.links")
+	// Open the magnet file and start downloading
+	file, err := os.Open(*magnetFile)
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
 
-	// open file and count the number of valid magnet links
-	fileConents, err := os.ReadFile("magnet.links")
+	// Open file and count the number of valid magnet links
+	fileContents, err := os.ReadFile(*magnetFile)
 	if err != nil {
 		panic(err)
 	}
 	numMagnetLinks := 0
-	for _, line := range strings.Split(string(fileConents), "\n") {
+	for _, line := range strings.Split(string(fileContents), "\n") {
 		if strings.HasPrefix(line, "magnet:") {
 			numMagnetLinks++
 		}
 	}
 
 	var wg sync.WaitGroup
-	// passed wg will be accounted at p.Wait() call
+	// Passed wg will be accounted at p.Wait() call
 	p := mpb.New(mpb.WithWaitGroup(&wg))
 	numBars := numMagnetLinks
 	wg.Add(numBars)
@@ -81,14 +94,14 @@ func main() {
 
 			bar := p.AddBar(int64(t.BytesMissing()),
 				mpb.PrependDecorators(
-					// simple name decorator
+					// Simple name decorator
 					decor.Name(t.Name()),
-					// decor.DSyncWidth bit enables column width synchronization
+					// Decor.DSyncWidth bit enables column width synchronization
 					decor.Percentage(decor.WCSyncSpace),
 				),
 				mpb.AppendDecorators(
 					decor.EwmaSpeed(decor.SizeB1024(0), "% .1f", 60),
-					// replace ETA decorator with "done" message, OnComplete event
+					// Replace ETA decorator with "done" message, OnComplete event
 					decor.OnComplete(
 						// ETA decorator with ewma age of 30
 						decor.EwmaETA(decor.ET_STYLE_GO, 30, decor.WCSyncWidth), " done",
