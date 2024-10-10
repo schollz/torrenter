@@ -72,6 +72,7 @@ func main() {
 
 		// Start downloading the torrent
 		go showDownloadProgress(t, p, &wg)
+		time.Sleep(1 * time.Second)
 	} else {
 		// Open the magnet file and start downloading
 		file, err := os.Open(*filename)
@@ -111,6 +112,7 @@ func main() {
 
 			// Start downloading the torrent
 			go showDownloadProgress(t, p, &wg)
+			time.Sleep(1 * time.Second)
 		}
 
 		if err := scanner.Err(); err != nil {
