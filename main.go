@@ -30,7 +30,7 @@ func main() {
 
 	// Check if the specified magnet file exists
 	if _, err := os.Stat(*filename); os.IsNotExist(err) {
-		fmt.Printf("file %s not found\n", filename)
+		fmt.Printf("file %s not found\n", *filename)
 		os.Exit(1)
 	}
 
