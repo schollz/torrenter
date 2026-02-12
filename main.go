@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anacrolix/log"
 	"github.com/anacrolix/torrent"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
@@ -42,8 +43,10 @@ func main() {
 	downloadDirectory := filepath.Join(cwd, "downloads")
 	config := torrent.NewDefaultClientConfig()
 	config.DataDir = downloadDirectory
-	// disable error messages
 	config.Debug = false
+	var logger log.Logger
+	logger.SetHandlers(log.DiscardHandler)
+	config.Logger = logger
 
 	// Create a torrent client
 	client, err := torrent.NewClient(config)
