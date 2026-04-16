@@ -74,7 +74,7 @@ func main() {
 		<-t.GotInfo()
 
 		// Start downloading the torrent
-		go showDownloadProgress(t, p, &wg)
+		go showDownloadProgress(t, p, &wg, downloadDirectory)
 		time.Sleep(1 * time.Second)
 	} else {
 		// Open the magnet file and start downloading
@@ -114,7 +114,7 @@ func main() {
 			<-t.GotInfo()
 
 			// Start downloading the torrent
-			go showDownloadProgress(t, p, &wg)
+			go showDownloadProgress(t, p, &wg, downloadDirectory)
 			time.Sleep(1 * time.Second)
 		}
 
@@ -130,13 +130,14 @@ func main() {
 
 }
 
-func showDownloadProgress(t *torrent.Torrent, p *mpb.Progress, wg *sync.WaitGroup) {
+func showDownloadProgress(t *torrent.Torrent, p *mpb.Progress, wg *sync.WaitGroup, dataDir string) {
 	t.DownloadAll()
 
 	if t.BytesMissing() == 0 {
 		fmt.Printf("[%s] done\n", t.Name())
 	} else {
-		bar := p.AddBar(int64(t.BytesMissing()),
+		totalBytes := t.BytesMissing()
+		bar := p.AddBar(totalBytes,
 			mpb.PrependDecorators(
 				// Simple name decorator
 				decor.Name(fmt.Sprintf("[%s]", t.Name())),
@@ -153,11 +154,34 @@ func showDownloadProgress(t *torrent.Torrent, p *mpb.Progress, wg *sync.WaitGrou
 			),
 		)
 		for t.BytesMissing() > 0 {
-			status := t.Stats()
+			downloaded := totalBytes - t.BytesMissing()
 			time.Sleep(100 * time.Millisecond)
-			bar.EwmaSetCurrent(int64(status.BytesRead.Int64()), 10*time.Millisecond)
+			bar.EwmaSetCurrent(downloaded, 100*time.Millisecond)
 		}
-
 	}
+
+	// Promote any remaining .part files to their final names. The library
+	// renames .part → final inside MarkComplete(), but errors there are
+	// only logged while the piece is still marked complete, so we do a
+	// defensive sweep here after the download reports as finished.
+	promotePartFiles(t, dataDir)
+
 	wg.Done()
+}
+
+// promotePartFiles renames any leftover .part files to their final paths.
+func promotePartFiles(t *torrent.Torrent, dataDir string) {
+	for _, f := range t.Files() {
+		partPath := filepath.Join(dataDir, f.Path()+".part")
+		finalPath := filepath.Join(dataDir, f.Path())
+		if _, err := os.Stat(partPath); err != nil {
+			continue // no .part file, nothing to do
+		}
+		if _, err := os.Stat(finalPath); err == nil {
+			continue // final file already exists
+		}
+		if err := os.Rename(partPath, finalPath); err != nil {
+			fmt.Printf("warning: could not rename %s → %s: %v\n", partPath, finalPath, err)
+		}
+	}
 }
