@@ -158,6 +158,7 @@ func showDownloadProgress(t *torrent.Torrent, p *mpb.Progress, wg *sync.WaitGrou
 			time.Sleep(100 * time.Millisecond)
 			bar.EwmaSetCurrent(downloaded, 100*time.Millisecond)
 		}
+		bar.SetCurrent(totalBytes)
 	}
 
 	// Promote any remaining .part files to their final names. The library
