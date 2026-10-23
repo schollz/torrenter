@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +22,7 @@ type machineFile struct {
 	Path     string `json:"path"`
 	Relative string `json:"relative"`
 	Size     int64  `json:"size"`
+	SHA256   string `json:"sha256,omitempty"`
 }
 
 type machineEvent struct {
@@ -46,6 +49,10 @@ func isVideo(path string) bool {
 }
 
 func runMachine(ctx context.Context, input io.Reader, output io.Writer, directory string, videoOnly bool) error {
+	return runMachineConfigured(ctx, input, output, directory, videoOnly, nil)
+}
+
+func runMachineConfigured(ctx context.Context, input io.Reader, output io.Writer, directory string, videoOnly bool, configure func(*torrent.ClientConfig)) error {
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 4096), 1<<20)
 	if !scanner.Scan() {
@@ -55,8 +62,9 @@ func runMachine(ctx context.Context, input io.Reader, output io.Writer, director
 		return fmt.Errorf("no magnet supplied")
 	}
 	magnet := strings.TrimSpace(scanner.Text())
-	if _, err := metainfo.ParseMagnetUri(magnet); err != nil {
-		return fmt.Errorf("invalid magnet: %w", err)
+	parsedMagnet, parseErr := metainfo.ParseMagnetUri(magnet)
+	if parseErr != nil {
+		return fmt.Errorf("invalid magnet: %w", parseErr)
 	}
 	if directory == "" {
 		directory = "downloads"
@@ -75,6 +83,9 @@ func runMachine(ctx context.Context, input io.Reader, output io.Writer, director
 	var logger log.Logger
 	logger.SetHandlers(log.DiscardHandler)
 	config.Logger = logger
+	if configure != nil {
+		configure(config)
+	}
 	client, err := torrent.NewClient(config)
 	if err != nil {
 		return err
@@ -83,6 +94,11 @@ func runMachine(ctx context.Context, input io.Reader, output io.Writer, director
 	t, err := client.AddMagnet(magnet)
 	if err != nil {
 		return err
+	}
+	cachePath := filepath.Join(directory, ".torrenter-"+hex.EncodeToString(parsedMagnet.InfoHash[:])+".torrent")
+	if cached, err := metainfo.LoadFromFile(cachePath); err == nil && cached.HashInfoBytes() == parsedMagnet.InfoHash {
+		// Invalid cached metadata falls back to obtaining it from peers.
+		_ = t.SetInfoBytes(cached.InfoBytes)
 	}
 	encoder := json.NewEncoder(output)
 	ticker := time.NewTicker(time.Second)
@@ -106,6 +122,9 @@ metadata:
 		case <-t.GotInfo():
 			break metadata
 		}
+	}
+	if err := cacheMetainfo(directory, cachePath, t.Metainfo()); err != nil {
+		return fmt.Errorf("caching torrent metadata: %w", err)
 	}
 	var selected []*torrent.File
 	var files []machineFile
@@ -157,7 +176,43 @@ metadata:
 	if err := finalizeMachineFiles(directory, files); err != nil {
 		return err
 	}
+	if err := encoder.Encode(machineEvent{Type: "progress", Name: "Verifying completed videos…", Downloaded: total, Total: total}); err != nil {
+		return err
+	}
+	for i := range files {
+		f, err := os.Open(files[i].Path)
+		if err != nil {
+			return err
+		}
+		h := sha256.New()
+		_, hashErr := io.Copy(h, f)
+		f.Close()
+		if hashErr != nil {
+			return hashErr
+		}
+		files[i].SHA256 = hex.EncodeToString(h.Sum(nil))
+	}
 	return encoder.Encode(machineEvent{Type: "complete", Name: t.Name(), Downloaded: total, Total: total, Root: directory, Files: files})
+}
+
+func cacheMetainfo(directory, destination string, info metainfo.MetaInfo) error {
+	f, err := os.CreateTemp(directory, ".torrenter-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err := info.Write(f); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), destination)
 }
 
 func finalizeMachineFiles(directory string, files []machineFile) error {

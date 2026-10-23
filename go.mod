@@ -10,7 +10,6 @@ require (
 
 require (
 	github.com/RoaringBitmap/roaring v1.9.4 // indirect
-	github.com/RoaringBitmap/roaring/v2 v2.30.0 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/alecthomas/atomic v0.1.0-alpha2 // indirect
