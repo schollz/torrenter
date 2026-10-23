@@ -2,12 +2,15 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/anacrolix/log"
@@ -22,11 +25,45 @@ func main() {
 	// Define a command-line flag for the magnet links file
 	filename := flag.String("file", "magnet.links", "Path to the magnet links file")
 	version := flag.Bool("version", false, "Print the version of the program")
+	jsonMode := flag.Bool("json", false, "Emit JSON events for one torrent instead of terminal progress")
+	magnetStdin := flag.Bool("magnet-stdin", false, "Read one magnet from stdin (requires --json)")
+	videoOnly := flag.Bool("video-only", false, "Download only video files (with --json)")
+	dataDir := flag.String("dir", "", "Download directory (default ./downloads)")
+	protocolVersion := flag.Bool("protocol-version", false, "Print the JSON protocol version")
 	flag.Parse()
+	if *protocolVersion {
+		fmt.Println("1")
+		return
+	}
 
 	if *version {
 		fmt.Println("torrenter " + Version)
 		os.Exit(0)
+	}
+	if *jsonMode {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer stop()
+		var input *os.File
+		if *magnetStdin {
+			input = os.Stdin
+		} else {
+			var err error
+			input, err = os.Open(*filename)
+			if err != nil {
+				emitMachineError(os.Stdout, err)
+				os.Exit(1)
+			}
+			defer input.Close()
+		}
+		if err := runMachine(ctx, input, os.Stdout, *dataDir, *videoOnly); err != nil {
+			emitMachineError(os.Stdout, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *magnetStdin || *videoOnly {
+		fmt.Fprintln(os.Stderr, "--magnet-stdin and --video-only require --json")
+		os.Exit(2)
 	}
 
 	// Check if the specified magnet file exists
@@ -41,6 +78,9 @@ func main() {
 		panic(err)
 	}
 	downloadDirectory := filepath.Join(cwd, "downloads")
+	if *dataDir != "" {
+		downloadDirectory = *dataDir
+	}
 	config := torrent.NewDefaultClientConfig()
 	config.DataDir = downloadDirectory
 	config.Debug = false
